@@ -4,6 +4,7 @@ import subprocess
 import re
 import gzip
 import numpy as np
+import random
 
 def stk_to_msa_with_target(seq_id, out_dir='./'):
     '''
@@ -225,4 +226,94 @@ def read_msa(msa_filepath, cap_msa_depth=np.inf, eff_cutoff=0.8, gap_cutoff=0.5)
 
     return msa, msa_w, v_idx
 
+NUC_VOCAB = ['A', 'C', 'G', 'U', 'N']
+basedir = pathlib.Path(RSSMFold.__file__).parent.parent.resolve()
+linearpartition_executable = os.path.join(basedir, 'LinearPartition', 'linearpartition')
+
+
+def read_fasta_file(fasta_path):
+    all_ids, all_seqs = [], []
+    with open(fasta_path, 'r') as file:
+        read_seq = ''
+        for line in file:
+            line = line.rstrip()
+            if line[0] == '>':
+                seq_id = line[1:].rstrip().lstrip()
+                all_ids.append(seq_id)
+                if len(read_seq) > 0:
+                    all_seqs.append(read_seq)
+                    read_seq = ''
+            else:
+                seq_one_line = line.upper().replace('T', 'U')
+                seq_one_line = ''.join(list(map(lambda c: c if c in NUC_VOCAB else 'N', seq_one_line)))
+                read_seq += seq_one_line
+        if len(read_seq) > 0:
+            all_seqs.append(read_seq)
+    return all_ids, all_seqs
+
+
+def augment_linearpartition(seqs, cutoff, outdir):
+    '''
+    This function requires LinearPartition program, which can be downloaded and installed with:
+
+        git clone https://github.com/LinearFold/LinearPartition
+        cd LinearPartition
+        make
+        cd ..
+
+    after that, create new variable:
+        <linearpartition_executable>: path of linearpartition
+
+
+    '''
+    all_triu = []
+    for seq in seqs:
+        np.random.seed(random.seed())
+        outfile = os.path.join(outdir, str(np.random.rand()) + '.lp_out')
+        cmd = f'echo {seq} | {linearpartition_executable} -o {outfile} -c {cutoff} >/dev/null 2>&1'
+        subprocess.call(cmd, shell=True)
+        nb_nodes = len(seq)
+        pred_mat = np.zeros((nb_nodes, nb_nodes, 1), dtype=np.float32)
+        with open(outfile, 'r') as file:
+            for line in file:
+                ret = line.rstrip().split()
+                if len(ret) == 0:
+                    continue
+                row = int(ret[0]) - 1
+                col = int(ret[1]) - 1
+                prob = float(ret[2])
+                pred_mat[row, col] = prob
+        all_triu.append(pred_mat[np.triu_indices(nb_nodes)])
+        os.remove(outfile)
+    return np.concatenate(all_triu, axis=0)
+
+
+def bpseq_remove_pseudoknots(bpseq_path):
+    '''
+    Make sure you have source code of FreeKnot.
+    Note the bash command below, if your program install in other place, please mix the following command.
+    '''
+
+    subprocess.call('''export PERLLIB=./FreeKnot
+        perl FreeKnot/remove_pseudoknot.pl -i bpseq -s bp {0} > {0}_freeknot'''.format(bpseq_path), shell=True)
+
+
+def bpseq_to_dot_bracket(bpseq_path):
+    '''
+    convert bpseq file(with csv format, it's clever?) into dot-bracket string.
+
+    Requirement: import pandas as pd
+    '''
+
+    bpseq_remove_pseudoknots(bpseq_path)
+    file = pd.read_csv(bpseq_path + '_freeknot', delimiter=' ', header=None)
+    seq = ''.join(list(file.iloc[:, 1]))
+    struct = ['.'] * len(seq)
+    for i, idx in enumerate(list(file.iloc[:, 2])):
+        if idx != 0:
+            if i < idx - 1:
+                struct[i] = '('
+            else:
+                struct[i] = ')'
+    return ''.join(struct)
 
