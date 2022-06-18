@@ -1,7 +1,7 @@
 # Code~Set
  Utils for AI+Science. This is a project which will collect useful utils from papers and open sources res. All the resources will noted with original authors.
 
-* Contributors: Xi Wang
+* Contributors: Xi Wang, Bo Zhang
 
 
 
