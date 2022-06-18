@@ -3,7 +3,7 @@
 
 * Contributors: Xi Wang, Bo Zhang
 * Notes
-* 1. some of source codes are amended due to efficiency and user-friendly consideration
+1. some of source codes are amended due to efficiency and user-friendly consideration
 
 
 ## Guide and Index
